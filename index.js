@@ -3,8 +3,7 @@ const {
   GatewayIntentBits,
   SlashCommandBuilder,
   REST,
-  Routes,
-  EmbedBuilder
+  Routes
 } = require('discord.js');
 
 const TOKEN = process.env.TOKEN;
@@ -17,110 +16,133 @@ const client = new Client({
 
 let data = {};
 
-function formatTime(ms) {
+function formatDuration(ms) {
   const totalSeconds = Math.floor(ms / 1000);
   const hours = Math.floor(totalSeconds / 3600);
   const minutes = Math.floor((totalSeconds % 3600) / 60);
   return `${hours}h ${minutes}m`;
 }
 
+function formatIST(timestamp) {
+  return new Date(timestamp).toLocaleString("en-IN", {
+    timeZone: "Asia/Kolkata",
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: true
+  });
+}
+
 const commands = [
-  new SlashCommandBuilder().setName('online').setDescription('Mark yourself as active'),
-  new SlashCommandBuilder().setName('offline').setDescription('Mark yourself as inactive'),
-  new SlashCommandBuilder().setName('leaderboard').setDescription('View today’s attendance leaderboard')
+  new SlashCommandBuilder()
+    .setName('online')
+    .setDescription('Mark yourself as online'),
+
+  new SlashCommandBuilder()
+    .setName('offline')
+    .setDescription('Mark yourself as offline'),
+
+  new SlashCommandBuilder()
+    .setName('time')
+    .setDescription('Check attendance report')
+    .addUserOption(option =>
+      option.setName('user')
+        .setDescription('Select a user')
+        .setRequired(false)
+    )
 ].map(cmd => cmd.toJSON());
 
 const rest = new REST({ version: '10' }).setToken(TOKEN);
 
 (async () => {
-  await rest.put(
-    Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
-    { body: commands }
-  );
+  try {
+    console.log("Registering slash commands...");
+    await rest.put(
+      Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
+      { body: commands }
+    );
+    console.log("Slash commands registered successfully.");
+  } catch (error) {
+    console.error(error);
+  }
 })();
 
 client.on('interactionCreate', async interaction => {
   if (!interaction.isChatInputCommand()) return;
 
-  const member = interaction.member;
-  const userId = interaction.user.id;
-  const username = member.displayName;
-  const roleColor = member.displayHexColor === "#000000"
-    ? 0x2b2d31
-    : member.displayHexColor;
+  const command = interaction.commandName;
+  const targetUser = interaction.options.getUser('user') || interaction.user;
+  const userId = targetUser.id;
 
   if (!data[userId]) {
-    data[userId] = { username: username, total: 0, start: null };
+    data[userId] = {
+      total: 0,
+      start: null,
+      lastOnline: null,
+      lastOffline: null
+    };
   }
 
   // ONLINE
-  if (interaction.commandName === 'online') {
-    if (data[userId].start) {
-      return interaction.reply({ content: "You are already active.", ephemeral: true });
+  if (command === 'online') {
+
+    if (data[interaction.user.id]?.start) {
+      return interaction.reply({ content: "You are already online.", ephemeral: true });
     }
 
-    data[userId].start = Date.now();
+    data[interaction.user.id].start = Date.now();
+    data[interaction.user.id].lastOnline = Date.now();
 
-    const embed = new EmbedBuilder()
-      .setColor(roleColor)
-      .setTitle("🟢 Attendance Started")
-      .setDescription(`<@${userId}> is now active`)
-      .addFields(
-        { name: "Start Time", value: new Date().toLocaleTimeString(), inline: true }
-      )
-      .setFooter({ text: "Aries Attendance System" })
-      .setTimestamp();
-
-    return interaction.reply({ embeds: [embed] });
+    return interaction.reply(
+      `**🟢 <@${interaction.user.id}> is now ONLINE**`
+    );
   }
 
   // OFFLINE
-  if (interaction.commandName === 'offline') {
-    if (!data[userId].start) {
-      return interaction.reply({ content: "You are already inactive.", ephemeral: true });
+  if (command === 'offline') {
+
+    if (!data[interaction.user.id]?.start) {
+      return interaction.reply({ content: "You are already offline.", ephemeral: true });
     }
 
-    const endTime = Date.now();
-    const session = endTime - data[userId].start;
-    data[userId].total += session;
+    const end = Date.now();
+    const session = end - data[interaction.user.id].start;
 
-    const embed = new EmbedBuilder()
-      .setColor(roleColor)
-      .setTitle("🔴 Attendance Ended")
-      .setDescription(`<@${userId}> is now inactive`)
-      .addFields(
-        { name: "Session Time", value: formatTime(session), inline: true },
-        { name: "Total Today", value: formatTime(data[userId].total), inline: true }
-      )
-      .setFooter({ text: "Aries Attendance System" })
-      .setTimestamp();
+    data[interaction.user.id].total += session;
+    data[interaction.user.id].start = null;
+    data[interaction.user.id].lastOffline = end;
 
-    data[userId].start = null;
-
-    return interaction.reply({ embeds: [embed] });
+    return interaction.reply(
+      `**🔴 <@${interaction.user.id}> is now OFFLINE**`
+    );
   }
 
-  // LEADERBOARD
-  if (interaction.commandName === 'leaderboard') {
-    const sorted = Object.values(data)
-      .sort((a, b) => b.total - a.total);
+  // TIME REPORT
+  if (command === 'time') {
 
-    if (sorted.length === 0) {
-      return interaction.reply("No attendance data yet.");
+    if (!data[userId] || (!data[userId].lastOnline && data[userId].total === 0)) {
+      return interaction.reply("No attendance record found.");
     }
 
-    const description = sorted
-      .map((u, i) => `**${i + 1}.** ${u.username} — ${formatTime(u.total)}`)
-      .join("\n");
+    const onlineTime = data[userId].lastOnline
+      ? formatIST(data[userId].lastOnline)
+      : "N/A";
 
-    const embed = new EmbedBuilder()
-      .setColor(0xf1c40f)
-      .setTitle("🏆 Today's Attendance Leaderboard")
-      .setDescription(description)
-      .setFooter({ text: "Aries Clan Activity Board" })
-      .setTimestamp();
+    const offlineTime = data[userId].lastOffline
+      ? formatIST(data[userId].lastOffline)
+      : (data[userId].start ? "Still Online" : "N/A");
 
-    return interaction.reply({ embeds: [embed] });
+    return interaction.reply(
+`📊 **Attendance Report – ${targetUser.username}**
+
+Online: ${onlineTime}
+Offline: ${offlineTime}
+
+Total Today: ${formatDuration(data[userId].total)}`
+    );
   }
 });
 
