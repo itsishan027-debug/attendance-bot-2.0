@@ -1,14 +1,18 @@
-const { Client, GatewayIntentBits } = require('discord.js');
-
-const client = new Client({
-  intents: [
-    GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent
-  ]
-});
+const { 
+  Client, 
+  GatewayIntentBits, 
+  SlashCommandBuilder, 
+  REST, 
+  Routes 
+} = require('discord.js');
 
 const TOKEN = process.env.TOKEN;
+const CLIENT_ID = process.env.CLIENT_ID; 
+const GUILD_ID = process.env.GUILD_ID; 
+
+const client = new Client({
+  intents: [GatewayIntentBits.Guilds]
+});
 
 let data = {};
 
@@ -19,63 +23,94 @@ function formatTime(ms) {
   return `${hours}h ${minutes}m`;
 }
 
-client.on('messageCreate', (message) => {
-  if (message.author.bot) return;
+// Slash Commands Define
+const commands = [
+  new SlashCommandBuilder()
+    .setName('online')
+    .setDescription('Mark yourself as active'),
 
-  const userId = message.author.id;
-  const username = message.author.username;
+  new SlashCommandBuilder()
+    .setName('offline')
+    .setDescription('Mark yourself as inactive'),
+
+  new SlashCommandBuilder()
+    .setName('leaderboard')
+    .setDescription('View today’s attendance leaderboard')
+].map(command => command.toJSON());
+
+const rest = new REST({ version: '10' }).setToken(TOKEN);
+
+// Register Slash Commands
+(async () => {
+  try {
+    console.log('Registering slash commands...');
+    await rest.put(
+      Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
+      { body: commands }
+    );
+    console.log('Slash commands registered.');
+  } catch (error) {
+    console.error(error);
+  }
+})();
+
+client.on('interactionCreate', async interaction => {
+  if (!interaction.isChatInputCommand()) return;
+
+  const userId = interaction.user.id;
+  const username = interaction.user.username;
 
   if (!data[userId]) {
     data[userId] = { username: username, total: 0, start: null };
   }
 
-  // ONLINE COMMAND
-  if (message.content === "A!online") {
+  // ONLINE
+  if (interaction.commandName === 'online') {
     if (data[userId].start) {
-      return message.reply("You are already marked as active.");
+      return interaction.reply({ content: "You are already active.", ephemeral: true });
     }
 
     data[userId].start = Date.now();
-    message.channel.send(`🟢 ${username} is now active at ${new Date().toLocaleTimeString()}`);
+    return interaction.reply(`🟢 ${username} is now active at ${new Date().toLocaleTimeString()}`);
   }
 
-  // OFFLINE COMMAND
-  if (message.content === "A!offline") {
+  // OFFLINE
+  if (interaction.commandName === 'offline') {
     if (!data[userId].start) {
-      return message.reply("You are already marked as inactive.");
+      return interaction.reply({ content: "You are already inactive.", ephemeral: true });
     }
 
     const endTime = Date.now();
-    const sessionTime = endTime - data[userId].start;
+    const session = endTime - data[userId].start;
 
-    data[userId].total += sessionTime;
+    data[userId].total += session;
 
-    const startTimeFormatted = new Date(data[userId].start).toLocaleTimeString();
-    const endTimeFormatted = new Date(endTime).toLocaleTimeString();
+    const startTime = new Date(data[userId].start).toLocaleTimeString();
+    const endFormatted = new Date(endTime).toLocaleTimeString();
 
     data[userId].start = null;
 
-    message.channel.send(
-      `🔴 ${username} was active from ${startTimeFormatted} to ${endTimeFormatted}.\nTotal active time today: ${formatTime(data[userId].total)}`
+    return interaction.reply(
+      `🔴 ${username} was active from ${startTime} to ${endFormatted}\nTotal today: ${formatTime(data[userId].total)}`
     );
   }
 
-  // LEADERBOARD COMMAND
-  if (message.content === "A!leaderboard") {
+  // LEADERBOARD
+  if (interaction.commandName === 'leaderboard') {
     const leaderboard = Object.values(data)
       .sort((a, b) => b.total - a.total)
-      .map((user, index) => `${index + 1}. ${user.username} - ${formatTime(user.total)}`)
+      .map((u, i) => `${i + 1}. ${u.username} - ${formatTime(u.total)}`)
       .join("\n");
 
     if (!leaderboard) {
-      return message.channel.send("No attendance data available yet.");
+      return interaction.reply("No attendance data yet.");
     }
 
-    message.channel.send(`🏆 **Today's Attendance Leaderboard** 🏆\n\n${leaderboard}`);
+    return interaction.reply(`🏆 **Today's Attendance Leaderboard** 🏆\n\n${leaderboard}`);
   }
 });
 
-client.once("ready", () => {
+client.once('ready', () => {
   console.log(`Logged in as ${client.user.tag}`);
 });
 
