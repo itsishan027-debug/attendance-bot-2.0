@@ -5,24 +5,19 @@ const fs = require("fs");
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// ===== EXPRESS SERVER (Render Ping ke liye) =====
+// ===== EXPRESS SERVER (24/7 KEEP ALIVE) =====
 app.get("/", (req, res) => {
   res.send("Bot is running 24/7 🚀");
 });
 
-app.listen(PORT, () => {
-  console.log("Web server started on port " + PORT);
-});
+app.listen(PORT, () => console.log("Web server started on port " + PORT));
 
 // ===== DISCORD BOT CONFIG =====
 const TOKEN = process.env.TOKEN;
 
-// ✅ Add your server ID and channel ID here
+// ✅ Your Server & Channel IDs
 const TARGET_SERVER_ID = "1434084048719843420";
 const TARGET_CHANNEL_ID = "1471509183215173664";
-
-// ✅ Optional: role restriction
-const ALLOWED_ROLE_ID = ;
 
 const client = new Client({
   intents: [
@@ -55,16 +50,13 @@ function formatDuration(ms) {
   return `${hours}h ${minutes}m`;
 }
 
-// ===== MAIN ATTENDANCE SYSTEM =====
+// ===== MAIN ATTENDANCE SYSTEM (ROLE-FREE) =====
 client.on("messageCreate", async (message) => {
   if (message.author.bot) return;
 
   // Server + Channel check
   if (!message.guild || message.guild.id !== TARGET_SERVER_ID) return;
   if (message.channel.id !== TARGET_CHANNEL_ID) return;
-
-  // Role check (optional)
-  if (ALLOWED_ROLE_ID && !message.member.roles.cache.has(ALLOWED_ROLE_ID)) return;
 
   const content = message.content.trim();
   const userId = message.author.id;
