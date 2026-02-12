@@ -22,52 +22,56 @@ function formatTime(ms) {
 client.on('messageCreate', (message) => {
   if (message.author.bot) return;
 
-  const id = message.author.id;
-  const name = message.author.username;
+  const userId = message.author.id;
+  const username = message.author.username;
 
-  if (!data[id]) {
-    data[id] = { name: name, total: 0, start: null };
+  if (!data[userId]) {
+    data[userId] = { username: username, total: 0, start: null };
   }
 
+  // ONLINE COMMAND
   if (message.content === "A!online") {
-    if (data[id].start) {
-      return message.reply("Tum already online ho.");
+    if (data[userId].start) {
+      return message.reply("You are already marked as active.");
     }
 
-    data[id].start = Date.now();
-    message.channel.send(`🟢 ${name} active at ${new Date().toLocaleTimeString()}`);
+    data[userId].start = Date.now();
+    message.channel.send(`🟢 ${username} is now active at ${new Date().toLocaleTimeString()}`);
   }
 
+  // OFFLINE COMMAND
   if (message.content === "A!offline") {
-    if (!data[id].start) {
-      return message.reply("Tum already offline ho.");
+    if (!data[userId].start) {
+      return message.reply("You are already marked as inactive.");
     }
 
-    const end = Date.now();
-    const session = end - data[id].start;
+    const endTime = Date.now();
+    const sessionTime = endTime - data[userId].start;
 
-    data[id].total += session;
-    const startTime = new Date(data[id].start).toLocaleTimeString();
-    const endTime = new Date(end).toLocaleTimeString();
+    data[userId].total += sessionTime;
 
-    data[id].start = null;
+    const startTimeFormatted = new Date(data[userId].start).toLocaleTimeString();
+    const endTimeFormatted = new Date(endTime).toLocaleTimeString();
+
+    data[userId].start = null;
 
     message.channel.send(
-      `🔴 ${name} was online from ${startTime} to ${endTime}\nTotal today: ${formatTime(data[id].total)}`
+      `🔴 ${username} was active from ${startTimeFormatted} to ${endTimeFormatted}.\nTotal active time today: ${formatTime(data[userId].total)}`
     );
   }
 
+  // LEADERBOARD COMMAND
   if (message.content === "A!leaderboard") {
     const leaderboard = Object.values(data)
       .sort((a, b) => b.total - a.total)
-      .map((u, i) => `${i + 1}. ${u.name} - ${formatTime(u.total)}`)
+      .map((user, index) => `${index + 1}. ${user.username} - ${formatTime(user.total)}`)
       .join("\n");
 
     if (!leaderboard) {
-      return message.channel.send("No attendance data yet.");
+      return message.channel.send("No attendance data available yet.");
     }
 
-    message.channel.send(`🏆 Today's Attendance Leaderboard 🏆\n\n${leaderboard}`);
+    message.channel.send(`🏆 **Today's Attendance Leaderboard** 🏆\n\n${leaderboard}`);
   }
 });
 
