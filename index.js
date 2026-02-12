@@ -3,7 +3,8 @@ const {
   GatewayIntentBits,
   SlashCommandBuilder,
   REST,
-  Routes
+  Routes,
+  PermissionFlagsBits
 } = require('discord.js');
 
 const TOKEN = process.env.TOKEN;
@@ -23,15 +24,11 @@ function formatDuration(ms) {
   return `${hours}h ${minutes}m`;
 }
 
-function formatIST(timestamp) {
-  return new Date(timestamp).toLocaleString("en-IN", {
+function formatISTTime(timestamp) {
+  return new Date(timestamp).toLocaleTimeString("en-IN", {
     timeZone: "Asia/Kolkata",
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
     hour: "2-digit",
     minute: "2-digit",
-    second: "2-digit",
     hour12: true
   });
 }
@@ -52,7 +49,18 @@ const commands = [
       option.setName('user')
         .setDescription('Select a user')
         .setRequired(false)
+    ),
+
+  new SlashCommandBuilder()
+    .setName('spendtime')
+    .setDescription('Admin check total online time of a user')
+    .addUserOption(option =>
+      option.setName('user')
+        .setDescription('Select a user')
+        .setRequired(true)
     )
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+
 ].map(cmd => cmd.toJSON());
 
 const rest = new REST({ version: '10' }).setToken(TOKEN);
@@ -93,11 +101,15 @@ client.on('interactionCreate', async interaction => {
       return interaction.reply({ content: "You are already online.", ephemeral: true });
     }
 
-    data[interaction.user.id].start = Date.now();
-    data[interaction.user.id].lastOnline = Date.now();
+    const now = Date.now();
+    data[interaction.user.id].start = now;
+    data[interaction.user.id].lastOnline = now;
+
+    const timeIST = formatISTTime(now);
+    const serverName = interaction.member.displayName;
 
     return interaction.reply(
-      `**🟢 <@${interaction.user.id}> is now ONLINE**`
+      `**🟢 ${serverName} online at ${timeIST} IST**`
     );
   }
 
@@ -108,15 +120,18 @@ client.on('interactionCreate', async interaction => {
       return interaction.reply({ content: "You are already offline.", ephemeral: true });
     }
 
-    const end = Date.now();
-    const session = end - data[interaction.user.id].start;
+    const now = Date.now();
+    const session = now - data[interaction.user.id].start;
 
     data[interaction.user.id].total += session;
     data[interaction.user.id].start = null;
-    data[interaction.user.id].lastOffline = end;
+    data[interaction.user.id].lastOffline = now;
+
+    const timeIST = formatISTTime(now);
+    const serverName = interaction.member.displayName;
 
     return interaction.reply(
-      `**🔴 <@${interaction.user.id}> is now OFFLINE**`
+      `**🔴 ${serverName} offline at ${timeIST} IST**`
     );
   }
 
@@ -127,23 +142,54 @@ client.on('interactionCreate', async interaction => {
       return interaction.reply("No attendance record found.");
     }
 
+    let total = data[userId].total;
+
+    if (data[userId].start) {
+      total += Date.now() - data[userId].start;
+    }
+
     const onlineTime = data[userId].lastOnline
-      ? formatIST(data[userId].lastOnline)
+      ? formatISTTime(data[userId].lastOnline)
       : "N/A";
 
     const offlineTime = data[userId].lastOffline
-      ? formatIST(data[userId].lastOffline)
+      ? formatISTTime(data[userId].lastOffline)
       : (data[userId].start ? "Still Online" : "N/A");
 
     return interaction.reply(
 `📊 **Attendance Report – ${targetUser.username}**
 
-Online: ${onlineTime}
-Offline: ${offlineTime}
+Online: ${onlineTime} IST
+Offline: ${offlineTime} IST
 
-Total Today: ${formatDuration(data[userId].total)}`
+Total Today: ${formatDuration(total)}`
     );
   }
+
+  // SPENDTIME
+  if (command === 'spendtime') {
+
+    const target = interaction.options.getUser('user');
+    const targetId = target.id;
+
+    if (!data[targetId]) {
+      return interaction.reply("No data found for this user.");
+    }
+
+    let total = data[targetId].total;
+
+    if (data[targetId].start) {
+      total += Date.now() - data[targetId].start;
+    }
+
+    return interaction.reply(
+`📊 **SPEND TIME REPORT**
+
+User: <@${targetId}>
+Total Online Time: ${formatDuration(total)}`
+    );
+  }
+
 });
 
 client.once('ready', () => {
